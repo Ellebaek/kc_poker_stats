@@ -1,0 +1,440 @@
+---
+title: "Kings Club Poker Championship"
+output:
+  html_document: default
+---
+
+```{r, echo=FALSE, warning=FALSE}
+now <- format(Sys.time(), "%d-%m-%Y %X")
+library(xtable)
+library(data.table)
+library(kableExtra)
+setwd(dirname(rstudioapi::getSourceEditorContext()$path))
+data<-read.table(paste0(getwd(),  "/tournament_results.csv"), header=T, sep=";")
+data <- as.data.table(data)
+playersKM   <- c("Anders", "Magnus", "Nicky", "Ellebaek", "Jonas")
+playersAllTime   <- c("Anders", "Magnus", "Nicky", "Ellebaek", "Jonas", "Thomas K", "Kasper", "Nicklas")
+
+years <- sort(unique(data$Year))
+
+# UPDATE ONCE PER YEAR:
+players2026 <- c("Anders", "Magnus", "Nicky", "Ellebaek", "Jonas")
+players2025 <- c("Anders", "Magnus", "Nicky", "Ellebaek", "Jonas")
+players2024 <- c("Anders", "Magnus", "Nicky", "Ellebaek", "Jonas")
+players2023 <- c("Anders", "Magnus", "Nicky", "Ellebaek", "Jonas")
+players2022 <- c("Anders", "Magnus", "Nicky", "Ellebaek", "Jonas")
+players2021 <- c("Anders", "Magnus", "Nicky", "Ellebaek", "Jonas", "Thomas K")
+players2020 <- c("Anders", "Magnus", "Nicky", "Ellebaek", "Jonas", "Thomas K")
+players2019 <- c("Anders", "Magnus", "Nicky", "Ellebaek", "Jonas", "Thomas K")
+players2018 <- c("Anders", "Magnus", "Nicky", "Ellebaek", "Jonas", "Thomas K")
+players2018 <- c("Anders", "Magnus", "Nicky", "Ellebaek", "Jonas")
+players2017 <- c("Anders", "Magnus", "Nicky", "Ellebaek", "Jonas", "Kasper", "Nicklas")
+players2016 <- c("Anders", "Magnus", "Nicky", "Ellebaek", "Nicklas", "Kasper")
+players2015 <- c("Anders", "Kasper", "Magnus", "Nicklas", "Nicky", "Ellebaek")
+
+# collect all player vars into a list
+players_list <- mget(paste0("players", years))
+# update names to be only the corresponding year
+names(players_list) <- sub("^players", "", names(players_list))
+
+cum.score.plot <- function(players, year_data, margin = 1) {
+    home_months <- rbind(data.frame(Home=c("INGEN"), Month=c(0), V1=c(0)), as.data.frame(year_data[,0, by = list(Home, Month)]))
+    month_data <- year_data[Player %in% players,list(score = sum(Point)), by = list(Player, Home, Month)]
+    month_player_bb <- as.data.table(merge(home_months, data.frame(Player=players), all=TRUE))
+    setkeyv(month_data, c("Player", "Home", "Month"))
+    setkeyv(month_player_bb, c("Player", "Home", "Month"))
+    
+    month_data_boosted <- month_data[month_player_bb][is.na(score),score:=0][order(Player, Month)]
+    cumsum_data <- month_data_boosted[,list(Month,cum.score=cumsum(score)), by = list(Player)]
+    
+    
+    max_value <- max(cumsum_data$cum.score, na.rm = TRUE)
+    
+    par(mar = c(5, 4, 2 + margin, 0.2))
+    plot(sort(home_months$Month), rep(max_value, nrow(home_months)), ylim=c(0,max_value), ylab="Cumulative score", xlab="Month", xaxt = 'n', yaxt = 'n', type="n")
+    axis(1, at=sort(home_months$Month), labels=sort(home_months$Month))
+    axis(2, at=seq(0, max_value, by=2), labels=seq(0, max_value, by=2))
+    for (i in seq(0, max_value, by=2)) {
+        abline(h=i, lty=2, col="lightgrey")    
+    }
+    cols <- c("red", "blue", "green", "purple", "black", "orange", "grey", "grey")
+    for (i in 1:length(players)) {
+        player_series <- cumsum_data[Player==players[i]][order(Month)]
+        points(player_series$Month, player_series$cum.score, type='o', pch=20, col=cols[i])
+    }
+    
+    par(fig=c(0, 1, 0, 1), oma=c(0, 0, 0, 0), mar=c(0, 0, 0 + margin, 0.2), new=TRUE)
+    plot(0, 0, type='n', bty='n', xaxt='n', yaxt='n', ylab="", xlab="")
+    legend("topright", players, cex = 0.8, col = cols, lty = 1, pch=20, horiz = TRUE)
+    
+}
+
+rollmean.score.plot <- function(players, data, window_length = 3, time_points = 5, margin = 1) {
+    ss <- subset(data, Player %in% players)
+    ss[,Year_Month:=paste0(Year, sprintf("%02d", Month))]
+    ss[is.na(Point),Point:=0]
+    
+    agr <- ss[,list(P=mean(Point)), by=list(Year_Month, Player)][order(Year_Month, Player)]
+    
+    dc <- dcast(agr, Year_Month ~ Player, fun=sum, value.var="P", fill=NA)
+    cols <- colnames(dc)
+    
+    # na.rm=TRUE ensure average over records present instead of always devide with window length
+    rollmean <- frollmean(subset(dc,select=-c(Year_Month)), window_length, na.rm=TRUE)
+    series_length <- length(dc$Year_Month)
+
+    plot_data <- data.table(seq(1, time_points))
+    for (i in 1:length(rollmean)) {
+        plot_data <- cbind(plot_data, rollmean[[i]][(series_length-time_points+1):series_length])    
+    }
+    max_value <- max(subset(plot_data, select=-c(1)), na.rm = TRUE)
+    
+    par(mar = c(5, 4, 2 + margin, 0.2))
+    plot(seq(1,time_points), rep(max_value, time_points), ylim=c(0,max_value), ylab="Rolling mean", xlab="Month", xaxt = 'n', yaxt = 'n', type="n")
+    axis(1, at=seq(1,time_points), labels=dc$Year_Month[(series_length-time_points+1):series_length])
+    axis(2, at=seq(0, max_value, by=1), labels=seq(0, max_value, by=1))
+    for (i in seq(0, max_value, by=1)) {
+        abline(h=i, lty=2, col="lightgrey")    
+    }
+    colors <- c("red", "blue", "green", "purple", "black", "orange", "grey", "grey")
+    
+    for (i in 1:length(players)) {
+        colnum <- match(players[i], cols)
+        player_series <- plot_data[,..colnum][[1]]
+        points(seq(1,time_points), player_series, type='o', pch=20, col=colors[i])
+    }
+    
+    par(fig=c(0, 1, 0, 1), oma=c(0, 0, 0, 0), mar=c(0, 0, 0 + margin, 0.2), new=TRUE)
+    plot(0, 0, type='n', bty='n', xaxt='n', yaxt='n', ylab="", xlab="")
+    legend("topright", players, cex = 0.8, col = colors, lty = 1, pch=20, horiz = TRUE)
+}
+
+# printing to be used from 2016 and onwards
+print.standard.year <- function(yr) {
+    cat("###", yr, "Championship Table\n\n")
+    
+    result <- results_list[[as.character(yr)]]
+    players <- players_list[[as.character(yr)]]
+    
+    print(xtable(result), type="html")
+    cat("\n\n")
+    
+    cum.score.plot(players, subset(data, Year == yr & Ignore != "SANT"))
+    cat("\n\n")
+}
+
+# function used from 2020 an onwards
+make_result_year <- function(yr, data) {
+  
+  year_data <- subset(data, Year==yr & Ignore != "SANT")
+  result <- year_data[,list(
+      games.played = sum(!is.na(Year)), 
+      wins = sum(Placement==1 & Ignore != "SANT"), 
+      pl.2nd = sum(Placement==2 & Ignore != "SANT"), 
+      pl.3rd = sum(Placement==3 & Ignore != "SANT"),
+      pl.4th = sum(Placement==4 & Ignore != "SANT"),
+      score = sum(Point)
+      ), by = list(Player)]
+  result <- subset(result, Player %in% players2020)[order(-score, -wins, -pl.2nd, -pl.3rd, -pl.4th, games.played)]
+  
+  return(result)
+}
+
+
+# stilling 2015
+yd2015 <- subset(data, Year == 2015)
+kills<-NULL;
+deaths<-NULL;
+gameCount<-NULL;
+wins<-NULL;
+top2<-NULL;
+bounties<-NULL;
+
+for (p in players2015) {
+    kills<-append(kills,length(yd2015$Killer[yd2015$Killer == p]));
+    deaths<-append(deaths,length(yd2015$Player[yd2015$Player == p & yd2015$Killer != "INGEN"]));
+    gameCount<-append(gameCount,length(yd2015$Player[yd2015$Player == p]));
+    wins<-append(wins,length(yd2015$Player[yd2015$Player == p & yd2015$Placement == 1]));
+    top2<-append(top2,length(yd2015$Player[yd2015$Player == p & yd2015$Placement <= 2])+0.5*length(yd2015$Player[yd2015$Player == p & yd2015$Placement == 2.5]));
+    bounties<-append(bounties,length(yd2015$Killer[yd2015$Killer == p & yd2015$Bounty == "SANT"]));
+}
+
+result2015 <- data.frame(Player=players2015,games.played=gameCount,win.percentage=round(wins/gameCount*100,2), top2.percentage=round(top2/gameCount*100,2),kills,kill.death.ratio=round(kills/deaths,2), bounties);
+
+result2015 <- result2015[order(-result2015$win.percentage, -result2015$top2.percentage, -result2015$kill.death.ratio, -result2015$games.played),];
+row.names(result2015)<-seq(1:length(players2015))
+
+
+# stilling 2016
+# replace NA with 0
+data$Price[is.na(data$Price)] <- 0
+data$Price <- as.integer(data$Price)
+data$Point[is.na(data$Point)] <- 0
+data$Point <- as.numeric(data$Point)
+data <- as.data.table(data)
+
+yd2016 <- subset(data, Year==2016)
+result2016 <- yd2016[,list(games.played = sum(!is.na(Year)), games.won = sum(Placement==1 & Point>0), score = sum(Point)), by = list(Player)][order(-score, -games.won, games.played)]
+# correct for one game night which should be excluded
+result2016[Player=="Anders"]$games.won <- result2016[Player=="Anders"]$games.won - 1
+result2016[Player=="Anders"]$games.played <- result2016[Player=="Anders"]$games.played - 1
+result2016[Player=="Ellebaek"]$games.played <- result2016[Player=="Ellebaek"]$games.played - 1
+result2016[Player=="Magnus"]$games.played <- result2016[Player=="Magnus"]$games.played - 1
+result2016[Player=="Jonas"]$games.played <- result2016[Player=="Jonas"]$games.played - 1
+result2016 <- subset(result2016, Player %in% players2016)[order(-score, -games.won, games.played)]
+
+
+# stilling 2017
+yd2017 <- subset(data, Year==2017)
+result2017 <- yd2017[,list(games.played = sum(!is.na(Year)), games.won = sum(Placement==1 & Point>0), score = sum(Point)), by = list(Player)][order(-score, -games.won, games.played)]
+result2017 <- subset(result2017, Player %in% players2017)[order(-score, -games.won, games.played)]
+
+
+# stilling 2018
+yd2018 <- subset(data, Year==2018)
+result2018 <- yd2018[,list(games.played = sum(!is.na(Year)), games.won = sum(Placement==1 & Point>0), score = sum(Point)), by = list(Player)][order(-score, -games.won, games.played)]
+result2018 <- subset(result2018, Player %in% players2018)[order(-score, -games.won, games.played)]
+
+
+# stilling 2019
+yd2019 <- subset(data, Year==2019)
+result2019 <- yd2019[,list(
+    games.played = sum(!is.na(Year)), 
+    wins = sum(Placement==1 & Ignore != "SANT"), 
+    pl.2nd = sum(Placement==2 & Ignore != "SANT"), 
+    pl.3rd = sum(Placement==3 & Ignore != "SANT"),
+    pl.4th = sum(Placement==4 & Ignore != "SANT"),
+    pl.5th = sum(Placement==5 & Ignore != "SANT"),
+    pl.6th = sum(Placement==6 & Ignore != "SANT"),
+    score = sum(Point)
+    ), by = list(Player)]
+result2019 <- subset(result2019, Player %in% players2019)[order(-score, -wins, -pl.2nd, -pl.3rd, -pl.4th, -pl.5th, -pl.6th, games.played)]
+
+
+
+# BUILD RESULTS LIST
+years_old    <- years[years >= 2015 & years <= 2019]
+years_modern <- years[years >= 2020]
+# old years from existing variables
+results_old <- mget(paste0("result", years_old))
+# update names to be only the corresponding year
+names(results_old) <- sub("^result", "", names(results_old))
+# modern years dynamically
+results_modern <- setNames(
+  lapply(years_modern, function(yr) make_result_year(yr, data)),
+  years_modern
+)
+# combine
+results_list <- c(results_old, results_modern)
+
+
+
+# BUILD CHAMPIONS TABLE
+champions <- rbindlist(
+  lapply(results_list, function(res) {
+    data.table(
+      Player = as.character(res$Player[1]),
+      Win = 1
+    )
+  })
+)
+
+# group by player and count wins
+champions <- champions[,list(Wins = sum(Win)), by = list(Player)][order(-Wins)]
+
+
+
+ydCurrent <- subset(data, Year==max(years))
+moneyList <- ydCurrent[,list(games.played = sum(!is.na(Year)), price = sum(Price)), by = list(Player)][order(-price, games.played)]
+moneyList <- subset(moneyList, Player %in% players_list[[as.character(max(years))]])
+
+
+money_data <- subset(data, Year>=2016)
+money_all_time <- money_data[,list(games.played = sum(!is.na(Year)), price = sum(Price)), by = list(Player)][order(-price, games.played)]
+money_all_time[,price.per.game := price / games.played]
+money_all_time <- money_all_time[order(-price.per.game, -games.played)]
+money_all_time <- subset(money_all_time, Player %in% playersAllTime)
+
+
+# kill matrix
+internal_kills <- subset(data, Player %in% playersKM & Killer %in% playersKM)
+internal_kills$Player <- factor(tolower(internal_kills$Player), levels=tolower(playersKM))
+internal_kills$Killer <- factor(toupper(internal_kills$Killer), levels=toupper(playersKM))
+kill_matrix <- table(internal_kills$Player, internal_kills$Killer)
+km_df <- as.data.frame.matrix(kill_matrix)
+
+all_games <- subset(data, Player %in% playersKM)
+all_games$Player <- factor(toupper(all_games$Player), levels=toupper(playersKM))
+all_games$counter <- "Games"
+
+all_kills <- subset(data, Killer %in% playersKM)
+all_kills$Killer <- factor(toupper(all_kills$Killer), levels=toupper(playersKM))
+all_kills$counter <- "Kills"
+
+all_deaths <- subset(data, Player %in% playersKM & Killer != "INGEN")
+all_deaths$Player <- factor(toupper(all_deaths$Player), levels=toupper(playersKM))
+all_deaths$counter <- "Deaths"
+
+all_wins <- subset(data, Player %in% playersKM & Killer == "INGEN")
+all_wins$Player <- factor(toupper(all_wins$Player), levels=toupper(playersKM))
+all_wins$counter <- "Wins"
+
+games_count <- table(all_games$counter, all_games$Player)
+g_df <- as.data.frame.matrix(games_count)
+kills_count <- table(all_kills$counter, all_kills$Killer)
+k_df <- as.data.frame.matrix(kills_count)
+deaths_count <- table(all_deaths$counter, all_deaths$Player)
+d_df <- as.data.frame.matrix(deaths_count)
+wins_count <- table(all_wins$counter, all_wins$Player)
+w_df <- as.data.frame.matrix(wins_count)
+
+kg_df <- round(k_df/g_df,2)
+row.names(kg_df) <- c("Kills/game")
+kd_df <- round(k_df/d_df,2)
+row.names(kd_df) <- c("Kills/death")
+km_df2 <- rbind(g_df, w_df, d_df, k_df, kg_df, kd_df)
+
+
+# Create a named list for the year columns, each filled with NA
+year_cols <- setNames(
+  lapply(years, function(x) rep(NA, length(playersAllTime))),
+  paste0("y", years)
+)
+
+# Combine with Player column into a data frame
+time_df <- data.frame(
+  Player = playersAllTime,
+  year_cols,
+  check.names = FALSE
+)
+
+
+for (col in colnames(time_df)[2:length(colnames(time_df))]) {
+    y = substring(col, 2)
+    yResult <- results_list[[as.character(y)]] # TO BE UPDATED
+    for (p in playersAllTime){
+        if (length(which(yResult$Player == p)) == 1) {
+            time_df[time_df$Player == p, col] <- which(yResult$Player == p)
+        }
+    }
+}
+
+# transpose
+# transpose all but the first column (name)
+plot_df <- as.data.frame(t(time_df[,-1]))
+colnames(plot_df) <- playersAllTime
+```
+
+Updated `r now`
+
+<!-- PRINT LATEST YEAR CHAMPIONSHIP TABLE -->
+```{r results='asis', echo=FALSE}
+print.standard.year(max(years))
+```
+
+<!-- PRINT LATEST YEAR MONEY LIST -->
+```{r results='asis', echo=FALSE}
+cat("###", max(years), "Money List\n\n")
+print(xtable(moneyList), type="html")
+```
+
+<!--- SEPARATOR BETWEEN CURRENT YEAR AND REST OF DOCUMENT --->
+```{r results='asis', echo=FALSE}
+cat("\n<hr style='border-top: 2px solid #999;'>\n\n")
+```
+
+### Kings Club Champions
+```{r results='asis', echo=FALSE}
+kbl(champions) %>%
+  kable_classic(full_width = F, font_size = 20, position = "left")
+```
+
+### Form 3 game-nights rolling mean
+```{r results='asis', echo=FALSE}
+rollmean.score.plot(players_list[[as.character(max(years))]], data, time_points = 8, window_length = 3)
+```
+
+
+### All time kill matrix
+```{r results='asis', echo=FALSE}
+km_df_copy = data.frame(km_df)
+rc <- nrow(km_df)
+for (i in 1:rc){
+    km_df[,i] = cell_spec(km_df[,i], color =  ifelse(1:rc == i, "white", "black"), background = ifelse(km_df_copy[,i] > as.matrix(km_df_copy[i,])[1,] + 5, "#28B463", ifelse(km_df_copy[,i] > as.matrix(km_df_copy[i,])[1,] + 3, "#58D68D", ifelse(km_df_copy[,i] > as.matrix(km_df_copy[i,])[1,] + 1, "#ABEBC6", "white"))))
+}
+#ifelse(as.matrix(km_df[,i]) != as.matrix(km_df[i,])[1,], "red", "blue"))    
+kbl(km_df, escape = F, align = "c") %>%
+  kable_classic(full_width = F, font_size = 20, position = "left")
+#print(xtable(km_df), type="html")
+```
+
+### All time kills per game
+```{r results='asis', echo=FALSE}
+print(xtable(km_df2), type="html")
+```
+
+### Placement over time
+```{r results='asis', echo=FALSE}
+
+max_value <- max(plot_df, na.rm = TRUE)
+xmin <- min(as.integer(years))
+xmax <- max(as.integer(years))
+
+par(mar = c(5, 4, 2, 0.2))
+plot(years, rep(max_value, length(years)), ylim=c(1,max_value), ylab="Placement", xlab="Year", xaxt = 'n', yaxt = 'n', type="n")
+axis(1, at=seq(from=xmin, to=xmax), labels=years)
+axis(2, at=1:max_value, labels=seq(max_value,1,by=-1))
+for (i in 1:max_value) {
+    abline(h=i, lty=2, col="lightgrey")    
+}
+cols <- c("red", "blue", "green", "purple", "black", "grey", "grey", "grey")
+for (i in 1:length(playersAllTime)) {
+    points(years, max_value+1-plot_df[,i], type='o', pch=20, col=cols[i])
+}
+
+par(fig=c(0, 1, 0, 1), oma=c(0, 0, 0, 0), mar=c(0, 0, 0, 0.2), new=TRUE)
+plot(0, 0, type='n', bty='n', xaxt='n', yaxt='n', ylab="", xlab="")
+legend("topright", playersAllTime[cols!="grey"], cex = 0.8, col = cols[cols!="grey"], lty = 1, pch=20, horiz = TRUE)
+```
+
+<!--- SEPARATOR BETWEEN AGGREGATED DATE AND CURRENT YEARS RAW DATA --->
+```{r results='asis', echo=FALSE}
+cat("\n<hr style='border-top: 2px solid #999;'>\n\n")
+```
+
+<!-- PRINT LATEST YEAR RAW DATA -->
+```{r results='asis', echo=FALSE}
+cat("###", max(years), "Data\n\n")
+print(xtable(ydCurrent), type="html")
+```
+
+<!--- SEPARATOR BETWEEN PREVIOUS YEARS AND TOP OF DOCUMENT --->
+```{r results='asis', echo=FALSE}
+cat("\n<hr style='border-top: 2px solid #999;'>\n\n")
+```
+
+<!-- Printing all historic years from 2016 and onwards, except current/latest -->
+```{r results='asis', echo=FALSE}
+for (yr in rev(years[years >= 2016 & years < max(years)])) {
+  print.standard.year(yr)
+}
+```
+
+### 2015 Championship Table
+```{r results='asis', echo=FALSE}
+print(xtable(result2015), type="html")
+```
+
+<!--- SEPARATOR BETWEEN YEAR DATA AND LINKS --->
+```{r results='asis', echo=FALSE}
+cat("\n<hr style='border-top: 2px solid #999;'>\n\n")
+```
+
+### Online Poker Clock
+https://www.ellebaek.se/clock
+
+### Online Poker Platform
+https://www.pokernow.club/
+
+### Old Poker Manager Download
+https://www.ellebaek.se/pokermanagersetup.msi
