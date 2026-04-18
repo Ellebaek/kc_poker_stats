@@ -16,6 +16,7 @@ playersKM   <- c("Anders", "Magnus", "Nicky", "Ellebaek", "Jonas")
 playersAllTime   <- c("Anders", "Magnus", "Nicky", "Ellebaek", "Jonas", "Thomas K", "Kasper", "Nicklas")
 
 years <- sort(unique(data$Year))
+current_year = max(years)
 
 # UPDATE ONCE PER YEAR:
 players2026 <- c("Anders", "Magnus", "Nicky", "Ellebaek", "Jonas")
@@ -215,6 +216,7 @@ result2019 <- subset(result2019, Player %in% players2019)[order(-score, -wins, -
 # BUILD RESULTS LIST
 years_old    <- years[years >= 2015 & years <= 2019]
 years_modern <- years[years >= 2020]
+
 # old years from existing variables
 results_old <- mget(paste0("result", years_old))
 # update names to be only the corresponding year
@@ -228,10 +230,9 @@ results_modern <- setNames(
 results_list <- c(results_old, results_modern)
 
 
-
-# BUILD CHAMPIONS TABLE
+# BUILD CHAMPIONS TABLE (removing current year, which is not over yet)
 champions <- rbindlist(
-  lapply(results_list, function(res) {
+  lapply(results_list[-length(results_list)], function(res) {
     data.table(
       Player = as.character(res$Player[1]),
       Win = 1
@@ -242,11 +243,12 @@ champions <- rbindlist(
 # group by player and count wins
 champions <- champions[,list(Wins = sum(Win)), by = list(Player)][order(-Wins)]
 
+# CREATE TABLE FOR MULTIPLE WINS ON SINGLE NIGHT
+multiple_wins <- data[Placement == 1, .(Wins = .N), by = .(Year, Month, Home, Player)][Wins >= 2]
 
-
-ydCurrent <- subset(data, Year==max(years))
+ydCurrent <- subset(data, Year==current_year)
 moneyList <- ydCurrent[,list(games.played = sum(!is.na(Year)), price = sum(Price)), by = list(Player)][order(-price, games.played)]
-moneyList <- subset(moneyList, Player %in% players_list[[as.character(max(years))]])
+moneyList <- subset(moneyList, Player %in% players_list[[as.character(current_year)]])
 
 
 money_data <- subset(data, Year>=2016)
@@ -329,12 +331,12 @@ Updated `r now`
 
 <!-- PRINT LATEST YEAR CHAMPIONSHIP TABLE -->
 ```{r results='asis', echo=FALSE}
-print.standard.year(max(years))
+print.standard.year(current_year)
 ```
 
 <!-- PRINT LATEST YEAR MONEY LIST -->
 ```{r results='asis', echo=FALSE}
-cat("###", max(years), "Money List\n\n")
+cat("###", current_year, "Money List\n\n")
 print(xtable(moneyList), type="html")
 ```
 
@@ -349,9 +351,15 @@ kbl(champions) %>%
   kable_classic(full_width = F, font_size = 20, position = "left")
 ```
 
+### Multiple wins single game-night
+```{r results='asis', echo=FALSE}
+kbl(multiple_wins) %>%
+  kable_classic(full_width = F, font_size = 20, position = "left")
+```
+
 ### Form 3 game-nights rolling mean
 ```{r results='asis', echo=FALSE}
-rollmean.score.plot(players_list[[as.character(max(years))]], data, time_points = 8, window_length = 3)
+rollmean.score.plot(players_list[[as.character(current_year)]], data, time_points = 8, window_length = 3)
 ```
 
 
@@ -404,7 +412,7 @@ cat("\n<hr style='border-top: 2px solid #999;'>\n\n")
 
 <!-- PRINT LATEST YEAR RAW DATA -->
 ```{r results='asis', echo=FALSE}
-cat("###", max(years), "Data\n\n")
+cat("###", current_year, "Data\n\n")
 print(xtable(ydCurrent), type="html")
 ```
 
@@ -415,7 +423,7 @@ cat("\n<hr style='border-top: 2px solid #999;'>\n\n")
 
 <!-- Printing all historic years from 2016 and onwards, except current/latest -->
 ```{r results='asis', echo=FALSE}
-for (yr in rev(years[years >= 2016 & years < max(years)])) {
+for (yr in rev(years[years >= 2016 & years < current_year])) {
   print.standard.year(yr)
 }
 ```
